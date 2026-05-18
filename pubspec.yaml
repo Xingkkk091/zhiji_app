@@ -1,0 +1,47 @@
+name: zhiji
+description: "智記 — 行事曆 + 智能記錄助手"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # 行事曆 UI
+  table_calendar: ^3.1.2
+
+  # 本地儲存
+  shared_preferences: ^2.3.2
+
+  # 本地通知 (提醒)
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+
+  # 背景執行 (Android WorkManager / iOS BGTask)
+  workmanager: ^0.5.2
+
+  # 接收其他 App 分享的文字 (長按 → 分享 → 智記)
+  receive_sharing_intent: ^1.8.0
+
+  # 權限請求
+  permission_handler: ^11.3.1
+
+  # 日期格式化
+  intl: ^0.20.2
+
+  # 自動更新檢查 (查 GitHub Releases)
+  http: ^1.2.2
+  package_info_plus: ^8.0.2
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

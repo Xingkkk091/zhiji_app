@@ -1,0 +1,76 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run analyzer
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build APK (release)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      - name: Rename APKs with version
+        run: |
+          mkdir -p artifacts
+          VER="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then VER="dev-${GITHUB_SHA::7}"; fi
+          cp build/app/outputs/flutter-apk/app-release.apk             "artifacts/zhiji-${VER}-universal.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk    "artifacts/zhiji-${VER}-arm64.apk"   || true
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk  "artifacts/zhiji-${VER}-arm32.apk"   || true
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk       "artifacts/zhiji-${VER}-x86_64.apk"  || true
+          ls -la artifacts/
+
+      - name: Upload artifact (every build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhiji-apk-${{ github.sha }}
+          path: artifacts/*.apk
+          retention-days: 30
+
+      - name: Create / update GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.apk
+          generate_release_notes: true
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
