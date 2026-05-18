@@ -1,33 +1,12 @@
-import 'package:workmanager/workmanager.dart';
-import 'storage.dart';
-import 'notifications.dart';
-
-const _kPeriodicTask = 'zhiji_periodic_check';
-
-@pragma('vm:entry-point')
-void backgroundDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      final storage = Storage();
-      final events = await storage.loadAll();
-      await NotificationService.instance.init();
-      // 為未來尚未排程的提醒重新對齊
-      await NotificationService.instance.rescheduleAll(events);
-    } catch (_) {}
-    return true;
-  });
-}
+// Background reminder 完全由 flutter_local_notifications + Android AlarmManager 負責。
+// 排程的鬧鐘是系統級別 (setExactAndAllowWhileIdle)，即使 App 被殺、裝置重開後，
+// 也會在指定時間 fire — 不需要額外 WorkManager。
+//
+// 開機後恢復鬧鐘已透過 AndroidManifest 的 RECEIVE_BOOT_COMPLETED 權限 +
+// flutter_local_notifications 內建 BootBroadcastReceiver 自動處理。
 
 class BackgroundService {
   static Future<void> init() async {
-    await Workmanager().initialize(backgroundDispatcher, isInDebugMode: false);
-    // 每 15 分鐘檢查一次（Android WorkManager 最低週期）
-    await Workmanager().registerPeriodicTask(
-      _kPeriodicTask,
-      _kPeriodicTask,
-      frequency: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
-      constraints: Constraints(networkType: NetworkType.not_required),
-    );
+    // no-op — 保留 API 以便未來擴充
   }
 }

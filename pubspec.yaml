@@ -21,9 +21,6 @@ dependencies:
   flutter_local_notifications: ^17.2.3
   timezone: ^0.9.4
 
-  # 背景執行 (Android WorkManager / iOS BGTask)
-  workmanager: ^0.5.2
-
   # 接收其他 App 分享的文字 (長按 → 分享 → 智記)
   receive_sharing_intent: ^1.8.0
 
