@@ -452,10 +452,10 @@ class _BackgroundSettingsSheetState extends State<_BackgroundSettingsSheet> {
 
   Future<void> _toggleBubble(bool v) async {
     if (v) {
-      final ok = await OverlayService.showBubble();
-      if (!ok && mounted) {
+      final err = await OverlayService.showBubble();
+      if (err != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('沒授權「在其他 App 上顯示」就不能開懸浮球')),
+          SnackBar(content: Text(err), duration: const Duration(seconds: 5)),
         );
       }
     } else {
