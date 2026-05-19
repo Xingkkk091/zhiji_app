@@ -6,7 +6,9 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../models/event.dart';
+import '../services/foreground_service.dart';
 import '../services/notifications.dart';
+import '../services/overlay_service.dart';
 import '../services/storage.dart';
 import '../services/updater.dart';
 import 'event_editor.dart';
@@ -131,6 +133,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _openBackgroundSettings() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _BackgroundSettingsSheet(),
+    );
+  }
+
   Future<void> _pasteAndCreate() async {
     final data = await Clipboard.getData('text/plain');
     final text = data?.text?.trim();
@@ -168,6 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: '從剪貼簿建立',
             onPressed: _pasteAndCreate,
             icon: const Icon(Icons.content_paste_go),
+          ),
+          IconButton(
+            tooltip: '懸浮球 / 背景服務',
+            onPressed: _openBackgroundSettings,
+            icon: const Icon(Icons.bubble_chart),
           ),
           IconButton(
             tooltip: '檢查更新',
@@ -401,6 +417,99 @@ class _EmptyToday extends StatelessWidget {
             label: const Text('新增一件'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BackgroundSettingsSheet extends StatefulWidget {
+  const _BackgroundSettingsSheet();
+  @override
+  State<_BackgroundSettingsSheet> createState() => _BackgroundSettingsSheetState();
+}
+
+class _BackgroundSettingsSheetState extends State<_BackgroundSettingsSheet> {
+  bool _bubbleOn = false;
+  bool _serviceOn = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final b = await OverlayService.isShown();
+    final s = await ForegroundService.isRunning();
+    if (!mounted) return;
+    setState(() {
+      _bubbleOn = b;
+      _serviceOn = s;
+      _loading = false;
+    });
+  }
+
+  Future<void> _toggleBubble(bool v) async {
+    if (v) {
+      final ok = await OverlayService.showBubble();
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('沒授權「在其他 App 上顯示」就不能開懸浮球')),
+        );
+      }
+    } else {
+      await OverlayService.hideBubble();
+    }
+    await _refresh();
+  }
+
+  Future<void> _toggleService(bool v) async {
+    if (v) {
+      await ForegroundService.start();
+    } else {
+      await ForegroundService.stop();
+    }
+    await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(height: 220, child: Center(child: CircularProgressIndicator()));
+    }
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('背景與懸浮球', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              value: _bubbleOn,
+              onChanged: _toggleBubble,
+              title: const Text('懸浮球'),
+              subtitle: const Text('任何 App 上都浮一顆球，點開即快速記事'),
+              secondary: const Icon(Icons.circle_outlined),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              value: _serviceOn,
+              onChanged: _toggleService,
+              title: const Text('背景服務'),
+              subtitle: const Text('通知欄保持一條通知，防止系統殺掉 App'),
+              secondary: const Icon(Icons.workspaces_outlined),
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '💡 首次開啟懸浮球會跳系統設定請你授權\n💡 中國品牌手機請額外把智記加入「自動啟動」與「電池無限制」',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
       ),
     );
   }
