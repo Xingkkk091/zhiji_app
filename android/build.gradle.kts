@@ -11,22 +11,33 @@ val newBuildDir: Directory =
         .get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
-// 強制所有子專案 (含外部 plugins) Java + Kotlin 都用 17，
-// 解決 receive_sharing_intent 等舊套件預設 1.8 造成的衝突。
-// 注意：plugin/task 配置要先註冊，再做 evaluationDependsOn(":app")，
-// 否則 afterEvaluate 會跑不到。
+// 強制所有子專案 (含外部 plugins) 的 Java + Kotlin 都用 17。
+// 關鍵: 用 afterEvaluate 在 plugin 完全配置後改 compileOptions，
+// 且把 afterEvaluate 註冊在 evaluationDependsOn 之前。
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 
-    // 直接對所有 Java / Kotlin compile task 強制 17，避開 plugin DSL 不一致問題
-    tasks.withType<JavaCompile>().configureEach {
-        sourceCompatibility = "17"
-        targetCompatibility = "17"
-    }
+    // Kotlin: 任務級覆寫
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+
+    // Java: 改 android.compileOptions (這才是 AGP 真正讀取的地方)
+    afterEvaluate {
+        val androidExt = extensions.findByName("android")
+        if (androidExt is com.android.build.gradle.BaseExtension) {
+            androidExt.compileOptions.apply {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+        }
+        // 雙保險: 任務級也設一次
+        tasks.withType<JavaCompile>().configureEach {
+            sourceCompatibility = "17"
+            targetCompatibility = "17"
         }
     }
 }
