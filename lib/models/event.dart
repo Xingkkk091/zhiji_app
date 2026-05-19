@@ -14,6 +14,7 @@ class CalendarEvent {
   bool done;
   EventCategory category;
   DateTime createdAt;
+  String? systemEventId; // 在系統行事曆 (Google) 同步後的 id
 
   CalendarEvent({
     required this.id,
@@ -24,6 +25,7 @@ class CalendarEvent {
     this.done = false,
     this.category = EventCategory.memo,
     DateTime? createdAt,
+    this.systemEventId,
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -35,6 +37,7 @@ class CalendarEvent {
         'done': done,
         'category': category.name,
         'createdAt': createdAt.toIso8601String(),
+        'systemEventId': systemEventId,
       };
 
   factory CalendarEvent.fromJson(Map<String, dynamic> j) => CalendarEvent(
@@ -46,6 +49,7 @@ class CalendarEvent {
         done: j['done'] as bool? ?? false,
         category: categoryFromString(j['category'] as String? ?? 'memo'),
         createdAt: DateTime.parse(j['createdAt'] as String),
+        systemEventId: j['systemEventId'] as String?,
       );
 
   static String encodeList(List<CalendarEvent> list) =>

@@ -6,12 +6,15 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../models/event.dart';
+import '../services/calendar_sync.dart';
 import '../services/foreground_service.dart';
 import '../services/notifications.dart';
+import '../services/ocr_service.dart';
 import '../services/overlay_service.dart';
 import '../services/storage.dart';
 import '../services/updater.dart';
 import 'event_editor.dart';
+import 'sync_settings_screen.dart';
 
 const _kGithubOwner = 'Xingkkk091';
 const _kGithubRepo = 'zhiji_app';
@@ -24,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _storage = Storage();
+  final _calSync = CalendarSync();
   List<CalendarEvent> _events = [];
   DateTime _focused = DateTime.now();
   DateTime _selected = DateTime.now();
@@ -63,15 +67,43 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _handleShared(List<SharedMediaFile> files) {
+  void _handleShared(List<SharedMediaFile> files) async {
     if (files.isEmpty) return;
+
+    // 1. 文字 / URL
     final text = files
         .where((f) => f.type == SharedMediaType.text || f.type == SharedMediaType.url)
         .map((f) => f.path)
         .join('\n')
         .trim();
-    if (text.isEmpty) return;
-    _openEditorForText(text);
+    if (text.isNotEmpty) {
+      _openEditorForText(text);
+      return;
+    }
+
+    // 2. 圖片 → OCR
+    final image = files.firstWhere(
+      (f) => f.type == SharedMediaType.image,
+      orElse: () => SharedMediaFile(path: '', type: SharedMediaType.text),
+    );
+    if (image.path.isEmpty) return;
+
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('🔍 正在辨識截圖文字...'), duration: Duration(seconds: 8)),
+    );
+
+    final extracted = await OcrService.recognize(image.path);
+    messenger.hideCurrentSnackBar();
+    if (extracted.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('沒有從圖片中辨識到文字')),
+      );
+      return;
+    }
+    _openEditorForText(extracted);
   }
 
   Future<void> _openEditorForText(String text) async {
@@ -105,13 +137,18 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _events.add(e);
     }
-    await _storage.saveAll(_events);
     if (e.hasReminder && !e.done) {
       await NotificationService.instance.cancelFor(e.id);
       await NotificationService.instance.scheduleFor(e);
     } else {
       await NotificationService.instance.cancelFor(e.id);
     }
+    // 同步到系統行事曆 (Google Calendar / Samsung 等)
+    try {
+      final sysId = await _calSync.upsertEvent(e, existingSystemId: e.systemEventId);
+      if (sysId != null) e.systemEventId = sysId;
+    } catch (_) {}
+    await _storage.saveAll(_events);
     if (mounted) setState(() {});
   }
 
@@ -119,6 +156,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _events.removeWhere((x) => x.id == e.id);
     await _storage.saveAll(_events);
     await NotificationService.instance.cancelFor(e.id);
+    if (e.systemEventId != null) {
+      try { await _calSync.deleteEvent(e.systemEventId!); } catch (_) {}
+    }
     if (mounted) setState(() {});
   }
 
@@ -186,6 +226,14 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.bubble_chart),
           ),
           IconButton(
+            tooltip: '行事曆同步',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SyncSettingsScreen()),
+            ),
+            icon: const Icon(Icons.sync),
+          ),
+          IconButton(
             tooltip: '檢查更新',
             onPressed: () => _updater.checkAndPrompt(context),
             icon: const Icon(Icons.system_update_alt),
@@ -218,7 +266,9 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               onFormatChanged: (f) => setState(() => _calFormat = f),
               onPageChanged: (foc) => _focused = foc,
+              rowHeight: 64,
               calendarStyle: const CalendarStyle(
+                outsideDaysVisible: false,
                 todayDecoration: BoxDecoration(
                   color: Color(0x335B8DEF),
                   shape: BoxShape.circle,
@@ -227,15 +277,46 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Color(0xFF5B8DEF),
                   shape: BoxShape.circle,
                 ),
-                markerDecoration: BoxDecoration(
-                  color: Color(0xFFEF4444),
-                  shape: BoxShape.circle,
-                ),
-                markersMaxCount: 4,
+                weekendTextStyle: TextStyle(color: Color(0xFFEF4444)),
               ),
               headerStyle: const HeaderStyle(
                 titleCentered: true,
                 formatButtonShowsNext: false,
+                titleTextStyle: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              calendarBuilders: CalendarBuilders<CalendarEvent>(
+                markerBuilder: (context, day, events) {
+                  if (events.isEmpty) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: events.take(3).map((e) {
+                        Color c;
+                        switch (e.category) {
+                          case EventCategory.todo:
+                            c = const Color(0xFF10B981);
+                            break;
+                          case EventCategory.idea:
+                            c = const Color(0xFFF59E0B);
+                            break;
+                          case EventCategory.memo:
+                            c = const Color(0xFF6366F1);
+                            break;
+                          case EventCategory.important:
+                            c = const Color(0xFFEF4444);
+                            break;
+                        }
+                        return Container(
+                          width: 5,
+                          height: 5,
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -247,6 +328,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   df.format(_selected),
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(width: 8),
+                if (!isSameDay(_selected, DateTime.now()))
+                  TextButton(
+                    onPressed: () {
+                      final now = DateTime.now();
+                      setState(() {
+                        _selected = now;
+                        _focused = now;
+                      });
+                    },
+                    child: const Text('今天'),
+                  ),
                 const Spacer(),
                 Text('${today.length} 件事', style: const TextStyle(color: Colors.grey)),
               ],
