@@ -544,17 +544,20 @@ class _BackgroundSettingsSheetState extends State<_BackgroundSettingsSheet> {
   }
 
   Future<void> _toggleBubble(bool v) async {
+    // 樂觀更新 UI，避免 isActive() 在某些手機回報不準導致開關亂跳
+    setState(() => _bubbleOn = v);
     if (v) {
       final err = await OverlayService.showBubble();
       if (err != null && mounted) {
+        // 失敗才把開關退回去
+        setState(() => _bubbleOn = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(err), duration: const Duration(seconds: 5)),
+          SnackBar(content: Text(err), duration: const Duration(seconds: 6)),
         );
       }
     } else {
       await OverlayService.hideBubble();
     }
-    await _refresh();
   }
 
   Future<void> _toggleService(bool v) async {

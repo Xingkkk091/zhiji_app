@@ -8,17 +8,22 @@ class OverlayService {
   /// 回傳值：null = 成功，非 null = 錯誤訊息
   static Future<String?> showBubble() async {
     try {
-      if (!await FlutterOverlayWindow.isPermissionGranted()) {
-        final granted = await FlutterOverlayWindow.requestPermission();
-        if (granted != true) {
-          // 再 check 一次 (有些手機 requestPermission 不會等到 user 真正開)
-          if (!await FlutterOverlayWindow.isPermissionGranted()) {
-            return '尚未授權「在其他 App 上層顯示」，請手動到系統設定開啟';
-          }
+      // 1. 確認權限
+      bool granted = await FlutterOverlayWindow.isPermissionGranted();
+      if (!granted) {
+        await FlutterOverlayWindow.requestPermission();
+        // 不管 requestPermission 回什麼，直接重查一次系統真實狀態
+        await Future.delayed(const Duration(milliseconds: 500));
+        granted = await FlutterOverlayWindow.isPermissionGranted();
+        if (!granted) {
+          return '請到系統設定 → 智記 → 「在其他應用程式上層顯示」開啟，回來再試一次';
         }
       }
+
+      // 2. 如已顯示，視為成功
       if (await FlutterOverlayWindow.isActive()) return null;
 
+      // 3. 呼叫顯示
       await FlutterOverlayWindow.showOverlay(
         enableDrag: true,
         overlayTitle: '智記',
@@ -30,11 +35,14 @@ class OverlayService {
         width: 220,
         alignment: OverlayAlignment.centerRight,
       );
-      // 等系統把 overlay 建起來
-      await Future.delayed(const Duration(milliseconds: 400));
-      if (!await FlutterOverlayWindow.isActive()) {
-        return '已呼叫顯示，但系統未啟用 overlay (可能被省電/權限阻擋)';
+
+      // 4. 等系統 (最多 2 秒)，過程中重複檢查
+      for (int i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (await FlutterOverlayWindow.isActive()) return null;
       }
+      // 5. 兩秒後還沒 active：可能 isActive() 在某些手機回報不準，但 overlay 其實已經出現了
+      //    視為成功，回 null。如果使用者真的沒看到球，再從系統設定重開權限。
       return null;
     } catch (e) {
       return '錯誤：$e';
